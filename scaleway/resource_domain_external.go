@@ -15,8 +15,6 @@ func resourceScalewayDomainExternal() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceScalewayDomainExternalCreate,
 		ReadContext:   resourceScalewayDomainExternalRead,
-		UpdateContext: resourceScalewayDomainExternalUpdate,
-		DeleteContext: resourceScalewayDomainExternalDelete,
 		Timeouts: &schema.ResourceTimeout{
 			Default: schema.DefaultTimeout(defaultDomainZoneTimeout),
 		},
@@ -57,78 +55,72 @@ func resourceScalewayDomainExternal() *schema.Resource {
 }
 
 func resourceScalewayDomainExternalCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	domainAPI := newDomainAPI(meta)
+    domainAPI := newDomainAPI(meta)
 
-	domainName := strings.ToLower(d.Get("domain").(string))
+    domainName := strings.ToLower(d.Get("domain").(string))
 
-	domains, err := domainAPI.ListDomains(&domain.ListDomainsRequest{
-		ProjectID: expandStringPtr(d.Get("project_id")),
-	}, scw.WithContext(ctx))
-	if err != nil {
-		return diag.FromErr(err)
-	}
+    domains, err := domainAPI.ListDomains(&domain.ListDomainsRequest{
+        ProjectID: expandStringPtr(d.Get("project_id")),
+    }, scw.WithContext(ctx))
+    if err != nil {
+        return diag.FromErr(err)
+    }
 
-	for i := range domains.Domains {
-		if domain.Domains[i].Domain == domainName 
-		{
-			d.SetId(fmt.Sprintf("%s", domainName))
+    for _, dmn := range domains.Domains {
+        if dmn.Domain == domainName {
+            d.SetId(fmt.Sprintf("%s", domainName))
+            return resourceScalewayDomainExternalRead(ctx, d, meta)
+        }
+    }
 
-			return resourceScalewayDomainExternalRead(ctx, d, meta)
-		}
-	}
+    dnsZone, err := domainAPI.CreateExternalDomain(&domain.CreateExternalDomainRequest{
+        ProjectID: d.Get("project_id").(string),
+        Domain:    domainName,
+    }, scw.WithContext(ctx))
 
-	var dnsZone *domain.DNSZone
+    if err != nil {
+        if is409Error(err) {
+            return resourceScalewayDomainExternalRead(ctx, d, meta)
+        }
+        return diag.FromErr(err)
+    }
+    d.SetId(fmt.Sprintf("%s", dnsZone.Domain))
 
-	dnsZone, err = domainAPI.CreateExternalDomain(&domain.RegistrarAPIRegisterExternalDomainRequest{
-		ProjectID: d.Get("project_id").(string),
-		Domain:    domainName,
-	}, scw.WithContext(ctx))
-
-	if err != nil {
-		if is409Error(err) {
-			return resourceScalewayDomainExternalRead(ctx, d, meta)
-		}
-		return diag.FromErr(err)
-	}
-	d.SetId(fmt.Sprintf("%s", domains.Domain))
-
-	return resourceScalewayDomainExternalRead(ctx, d, meta)
+    return resourceScalewayDomainExternalRead(ctx, d, meta)
 }
 
 func resourceScalewayDomainExternalRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	domainAPI := newDomainAPI(meta)
+    domainAPI := newDomainAPI(meta)
 
-	var domain *domain.Domain
+    domains, err := domainAPI.ListDomains(&domain.ListDomainsRequest{
+        ProjectID: expandStringPtr(d.Get("project_id")),
+    }, scw.WithContext(ctx))
+    if err != nil {
+        if is404Error(err) {
+            d.SetId("")
+            return nil
+        }
+        return diag.FromErr(err)
+    }
 
-	domain, err := domainAPI.ListDomains(&domain.ListDomainsRequest{
-		ProjectID: expandStringPtr(d.Get("project_id")),
-	}, scw.WithContext(ctx))
-	if err != nil {
-		if is404Error(err) {
-			d.SetId("")
-			return nil
-		}
-		return diag.FromErr(err)
-	}
+    if len(domains.Domains) == 0 {
+        return diag.FromErr(fmt.Errorf("no domain found with the name %s", d.Id()))
+    }
 
-	if len(domain.Domains) == 0 {
-		return diag.FromErr(fmt.Errorf("no domain found with the name %s", d.Id()))
-	}
+    if len(domains.Domains) > 1 {
+        return diag.FromErr(fmt.Errorf("%d domains found with the same name %s", len(domains.Domains), d.Id()))
+    }
 
-	if len(domain.Domains) > 1 {
-		return diag.FromErr(fmt.Errorf("%d domain found with the same name %s", len(domain.Domains), d.Id()))
-	}
-
-	domain = domain.Domains[0]
-	_ = d.Set("domain", domain.Domain)
-	_ = d.Set("dnssec_status", domain.DnssecStatus.String())
-	_ = d.Set("status", domain.Status.String())
-	_ = d.Set("epp_code", domain.EppCode.String())
-	_ = d.Set("updated_at", domain.UpdatedAt.String())
-	_ = d.Set("expire_at", domain.ExpiredAt.String())
-	_ = d.Set("is_external", domain.IsExternal.String())
-	_ = d.Set("registrar", domain.Registrar.String())
-	_ = d.Set("project_id", domain.ProjectID)
+    dmn := domains.Domains[0]
+    _ = d.Set("domain", dmn.Domain)
+	_ = d.Set("dnssec_status", dmn.DnssecStatus.String())
+	_ = d.Set("status", dmn.Status.String())
+	_ = d.Set("epp_code", dmn.EppCode.String())
+	_ = d.Set("updated_at", dmn.UpdatedAt.String())
+	_ = d.Set("expire_at", dmn.ExpiredAt.String())
+	_ = d.Set("is_external", dmn.IsExternal.String())
+	_ = d.Set("registrar", dmn.Registrar.String())
+	_ = d.Set("project_id", dmn.ProjectID)
 
 	return nil
 }
