@@ -103,6 +103,7 @@ func Provider(config *ProviderConfig) plugin.ProviderFunc {
 				"scaleway_documentdb_read_replica":             resourceScalewayDocumentDBReadReplica(),
 				"scaleway_domain_record":                       resourceScalewayDomainRecord(),
 				"scaleway_domain_zone":                         resourceScalewayDomainZone(),
+				"scaleway_domain_external":                     resourceScalewayDomainExternal(),
 				"scaleway_flexible_ip":                         resourceScalewayFlexibleIP(),
 				"scaleway_flexible_ip_mac_address":             resourceScalewayFlexibleIPMACAddress(),
 				"scaleway_function":                            resourceScalewayFunction(),
